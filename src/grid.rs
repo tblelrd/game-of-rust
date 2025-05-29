@@ -1,4 +1,4 @@
-use std::thread;
+use std::{sync::{Arc, RwLock}, thread};
 
 use raylib::prelude::*;
 use crate::cell::{check_cell_conway, check_cell_test, Cell};
@@ -33,6 +33,65 @@ fn get_index_from_position(position: (i32, i32), size: (i32, i32)) -> usize {
     (new_col + (new_row * width)) as usize
 }
 
+pub fn get_position_from_index(index: usize, size: (i32, i32)) -> (i32, i32) {
+    let (width, _height) = size;
+    (
+        index as i32 / width,
+        index as i32 % width,
+    )
+}
+
+pub fn get_neighbors(cells: &Vec<Cell>, position: (i32, i32), size: (i32, i32)) -> u8 {
+    let (row, col) = position;
+
+    let tl = get_state_at(cells, (row - 1, col - 1), size);
+    let tc = get_state_at(cells, (row - 1, col), size);
+    let tr = get_state_at(cells, (row - 1, col + 1), size);
+    let ml = get_state_at(cells, (row, col - 1), size);
+    let mr = get_state_at(cells, (row, col + 1), size);
+    let bl = get_state_at(cells, (row + 1, col - 1), size);
+    let bc = get_state_at(cells, (row + 1, col), size);
+    let br = get_state_at(cells, (row + 1, col + 1), size);
+
+    let neighbors = tl as u8
+        + tc as u8
+        + tr as u8
+        + ml as u8
+        + mr as u8
+        + bl as u8
+        + bc as u8
+        + br as u8;
+
+    neighbors
+}
+
+pub fn wake_up_neighbors(cells: &mut Vec<Cell>, position: (i32, i32), size: (i32, i32)) {
+    let (row, col) = position;
+
+    cells.wake_up_at(get_index_from_position((row - 1, col - 1), size));
+    cells.wake_up_at(get_index_from_position((row - 1, col), size));
+    cells.wake_up_at(get_index_from_position((row - 1, col + 1), size));
+    cells.wake_up_at(get_index_from_position((row, col - 1), size));
+    cells.wake_up_at(get_index_from_position((row, col + 1), size));
+    cells.wake_up_at(get_index_from_position((row + 1, col - 1), size));
+    cells.wake_up_at(get_index_from_position((row + 1, col), size));
+    cells.wake_up_at(get_index_from_position((row + 1, col + 1), size));
+}
+
+pub fn get_state_at(cells: &Vec<Cell>, position: (i32, i32), size: (i32, i32)) -> bool {
+    let (row, col) = position;
+    let (width, height) = size;
+
+    let mut new_col = col % width;
+    if col < 0 { new_col += width; }
+
+    let mut new_row = row % height;
+    if row < 0 { new_row += height; }
+
+    let index = get_index_from_position((new_row, new_col), size);
+    cells[index].state
+}
+
 
 impl Grid {
     pub fn new(width: i32, height: i32, cell_width: i32) -> Grid {
@@ -52,98 +111,104 @@ impl Grid {
     }
 
     pub fn step(&mut self) {
-        // let mut new_cells: Vec<Cell> = self.cells.clone();
+        let arc_cells = Arc::new(self.cells.clone());
 
         let mut handles = Vec::with_capacity(self.height as usize);
+        let now = std::time::Instant::now();
         for row in 0..self.height {
             let width = self.width;
             let height = self.height;
+            let cloned_cells = arc_cells.clone();
 
             handles.push(thread::spawn(move || {
-                let row_cells: Vec<Cell> = Vec::with_capacity(width as usize);
+                let mut row_cells: Vec<Cell> = Vec::with_capacity(width as usize);
 
                 for col in 0..width {
                     let current_index = get_index_from_position((row, col), (width, height));
+                    let cell = cloned_cells[current_index].clone();
+                    row_cells.push(cell);
+
+                    let cell = row_cells.last_mut().unwrap();
+                    if cell.state { cell.frames_alive += 1 }
+                    if !cell.should_update { continue; }
+                    
+                    let neighbors = get_neighbors(&cloned_cells, (row, col), (width, height));
+                    cell.set_state(check_cell_conway(cloned_cells[current_index].state, neighbors));
                 }
+
+                row_cells
             }));
-            // for col in 0..self.width {
-            //     let current_index = self.get_index_from_position((row, col));
-            //     let new_cell = &mut new_cells[current_index];
-            //
-            //     if new_cell.state { new_cell.frames_alive += 1; }
-            //     if !new_cell.should_update { continue; }
-            //
-            //
-            //     let neighbors = self.get_neighbors(&self.cells, (row, col));
-            //     new_cell.set_state(check_cell_test(self.cells[current_index].state, neighbors));
-            // }
         }
+        println!("Step one - {:.2?}", now.elapsed());
 
-        // for i in 0..new_cells.len() {
-        //     if !new_cells[i].should_update { continue; }
-        //     let position = self.get_position_from_index(i);
-        //     if 
-        //     (new_cells[i].state == self.cells[i].state)
-        //     &&
-        //     (self.get_neighbors(&self.cells, position) == self.get_neighbors(&new_cells, position))
-        //     {
-        //         new_cells[i].should_update = false;
-        //     } else {
-        //         self.wake_up_neighbors(&mut new_cells, position);
-        //     }
-        // }
+        let now = std::time::Instant::now();
+        let mut new_cells: Vec<Cell> = Vec::with_capacity(self.cells.capacity());
+        for handle in handles {
+            let result = handle.join().unwrap();
+            new_cells.extend(result);
+        }
+        println!("Join one - {:.2?}", now.elapsed());
 
-        self.cells = vec!();
-    }
+        let length = new_cells.len();
+        let arc_new_cells = Arc::new(new_cells);
 
-    pub fn get_neighbors(&self, cells: &Vec<Cell>, position: (i32, i32)) -> u8 {
-        let (row, col) = position;
+        let now = std::time::Instant::now();
+        let mut handles = Vec::with_capacity(length);
+        for row in 0..self.height{
+            let size = (self.width, self.height);
+            let cloned_new_cells = arc_new_cells.clone();
+            let old_cells = arc_cells.clone();
 
-        let tl = self.get_state_at(cells, (row - 1, col - 1));
-        let tc = self.get_state_at(cells, (row - 1, col));
-        let tr = self.get_state_at(cells, (row - 1, col + 1));
-        let ml = self.get_state_at(cells, (row, col - 1));
-        let mr = self.get_state_at(cells, (row, col + 1));
-        let bl = self.get_state_at(cells, (row + 1, col - 1));
-        let bc = self.get_state_at(cells, (row + 1, col));
-        let br = self.get_state_at(cells, (row + 1, col + 1));
+            handles.push(thread::spawn(move || {
+                let (width, _height) = size;
+                let mut column_changes = Vec::with_capacity(width as usize);
 
-        let neighbors = tl as u8
-            + tc as u8
-            + tr as u8
-            + ml as u8
-            + mr as u8
-            + bl as u8
-            + bc as u8
-            + br as u8;
+                for col in 0..width {
+                    let position = (row, col);
+                    let i = get_index_from_position(position, size);
 
-        neighbors
-    }
+                    if !cloned_new_cells[i].should_update {
+                        // column_changes.push(None)
+                        continue;
+                    }
 
-    pub fn wake_up_neighbors(&self, cells: &mut Vec<Cell>, position: (i32, i32)) {
-        let (row, col) = position;
+                    if cloned_new_cells[i].state == old_cells[i].state &&
+                    (get_neighbors(&old_cells, position, size) == get_neighbors(&cloned_new_cells, position, size))
+                    {
+                        column_changes.push((i, false))
+                    } else {
+                        column_changes.push((i, true))
+                    }
+                }
 
-        cells.wake_up_at(self.get_index_from_position((row - 1, col - 1)));
-        cells.wake_up_at(self.get_index_from_position((row - 1, col)));
-        cells.wake_up_at(self.get_index_from_position((row - 1, col + 1)));
-        cells.wake_up_at(self.get_index_from_position((row, col - 1)));
-        cells.wake_up_at(self.get_index_from_position((row, col + 1)));
-        cells.wake_up_at(self.get_index_from_position((row + 1, col - 1)));
-        cells.wake_up_at(self.get_index_from_position((row + 1, col)));
-        cells.wake_up_at(self.get_index_from_position((row + 1, col + 1)));
-    }
+                column_changes
+            }));
+        }
+        println!("Step two - {:.2?}", now.elapsed());
 
-    pub fn get_state_at(&self, cells: &Vec<Cell>, position: (i32, i32)) -> bool {
-        let (row, col) = position;
+        let mut changes = Vec::with_capacity(self.cells.capacity());
+        let now = std::time::Instant::now();
+        for handle in handles {
+            let column_changes = handle.join().unwrap();
+            changes.extend(column_changes)
+        }
+        println!("Join two - {:.2?}", now.elapsed());
 
-        let mut new_col = col % self.width;
-        if col < 0 { new_col += self.width; }
+        let now = std::time::Instant::now();
+        let mut final_cells = Arc::into_inner(arc_new_cells).unwrap();
+        let change_length = changes.len();
+        for change in changes {
+            let (i, should_update) = change;
 
-        let mut new_row = row % self.height;
-        if row < 0 { new_row += self.height; }
+            final_cells[i].should_update = should_update;
+            let position = get_position_from_index(i, (self.width, self.height));
+            if should_update {
+                wake_up_neighbors(&mut final_cells, position, (self.width, self.height));
+            }
+        }
+        println!("Step three - {:.2?} with {} iterations", now.elapsed(), change_length);
 
-        let index = self.get_index_from_position((new_row, new_col));
-        cells[index].state
+        self.cells = final_cells;
     }
 
     pub fn draw(&self, draw_handle: &mut RaylibDrawHandle) {
@@ -179,41 +244,22 @@ impl Grid {
         (row, col)
     }
 
-    pub fn get_index_from_position(&self, position: (i32, i32)) -> usize {
-        let (row, col) = position;
-
-        let mut new_col = col % self.width;
-        if col < 0 { new_col += self.width; }
-
-        let mut new_row = row % self.height;
-        if row < 0 { new_row += self.height; }
-
-        (new_col + (new_row * self.width)) as usize
-    }
-
-    pub fn get_position_from_index(&self, index: usize) -> (i32, i32) {
-        (
-            index as i32 / self.width,
-            index as i32 % self.width,
-        )
-    }
-
     pub fn get_cell_at_mut(&mut self, mouse_position: &Vector2) -> Option<&mut Cell> {
         let position = self.get_position_from_mouse(mouse_position);
-        let index = self.get_index_from_position(position);
+        let index = get_index_from_position(position, (self.width, self.height));
         self.cells.get_mut(index)
     }
 
     pub fn get_cell_at(&self, mouse_position: &Vector2) -> Option<&Cell> {
         let position = self.get_position_from_mouse(mouse_position);
-        let index = self.get_index_from_position(position);
+        let index = get_index_from_position(position, (self.width, self.height));
         self.cells.get(index)
     }
 
     pub fn set_cell_at(&mut self, mouse_position: &Vector2, state: bool) {
         let position = self.get_position_from_mouse(mouse_position);
         let mut temp_cells = self.cells.clone();
-        self.wake_up_neighbors(&mut temp_cells, position);
+        wake_up_neighbors(&mut temp_cells, position, (self.width, self.height));
         self.cells = temp_cells;
 
         match self.get_cell_at_mut(mouse_position) {

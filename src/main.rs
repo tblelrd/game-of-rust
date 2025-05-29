@@ -15,6 +15,8 @@ const UPDATE_FRAMES: u32 = TARGET_FPS / 120; // How many frames per tick
 const WAIT_TIME: u32 = TARGET_FPS / 2; // How many frames after mouse down to start updating again.
 const TIME_TO_RED: u32 = UPDATE_FRAMES * 2; // How many frames it takes to become red.
 
+const MAX_THREADS: usize = 20;
+
 fn invalid_params () {
     println!("Expected parameters: ./conway <width> <height> <width of cell>");
 }
@@ -57,19 +59,27 @@ fn main() {
     let mut paused_frames = 0;
     while !rl.window_should_close() {
 
-        let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
+        let left_clicked = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
+        let right_clicked = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_RIGHT);
 
         if paused_frames <= 0{
             frames += 1;
             if frames % UPDATE_FRAMES == 0 {
+                // let now = std::time::Instant::now();
                 grid.step();
+                // println!("{:.2?}", now.elapsed());
             }
         } else {
             paused_frames -= 1;
         }
 
+        // if right_clicked {
+        //     paused_frames = WAIT_TIME;
+        //     frames = 0;
+        // }
+        //
         // Do mouse stuff
-        if mouse_down {
+        if left_clicked {
             // Reset frames
             paused_frames = WAIT_TIME;
             frames = 0;
@@ -96,8 +106,9 @@ fn main() {
         // dbg!(1.0 / frame_time);
 
         d.clear_background(BACKGROUND_COLOR);
-        grid.draw(&mut d);
+        if left_clicked || right_clicked { grid.draw(&mut d); }
+        // grid.draw(&mut d);
 
-        d.draw_text(&format!("{} FPS", (1.0 / frame_time).round()), 0, 0, 24, Color::WHITE);
+        d.draw_text(&format!("FPS: {}", 1.0 / frame_time), 0, 0, 24, Color::WHITE);
     }
 }
