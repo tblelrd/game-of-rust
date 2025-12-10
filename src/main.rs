@@ -11,7 +11,7 @@ const CELL_COLOR: Color = Color::WHITE;
 const CELL_OUTLINE: Color = Color::BLACK;
 
 const TARGET_FPS: u32 = 120;
-const UPDATE_FRAMES: u32 = TARGET_FPS / 120; // How many frames per tick 
+const UPDATE_FRAMES: u32 = TARGET_FPS / 12; // How many frames per tick 
 const WAIT_TIME: u32 = TARGET_FPS / 2; // How many frames after mouse down to start updating again.
 const TIME_TO_RED: u32 = UPDATE_FRAMES * 2; // How many frames it takes to become red.
 
@@ -106,8 +106,8 @@ fn main() {
         // dbg!(1.0 / frame_time);
 
         d.clear_background(BACKGROUND_COLOR);
-        if left_clicked || right_clicked { grid.draw(&mut d); }
-        // grid.draw(&mut d);
+        // if left_clicked || right_clicked { grid.draw(&mut d); }
+        grid.draw(&mut d);
 
         d.draw_text(&format!("FPS: {}", 1.0 / frame_time), 0, 0, 24, Color::WHITE);
     }

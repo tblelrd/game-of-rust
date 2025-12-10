@@ -1,6 +1,9 @@
-# Bad code warning.
+# Conway's Game of Life
 
-Start the program.
+Everyone knows this game, this is the rust implementation with
+multithreading.
+
+# Running 
 
 ```
 cargo run <width> <height> <width of cell>

@@ -2,9 +2,10 @@ use raylib::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct Cell {
-    pub frames_alive: u16,
+    pub frames_alive: u32,
     pub state: bool,
     pub should_update: bool,
+    pub needs_redraw: bool,
 }
 
 impl Cell {
@@ -12,6 +13,7 @@ impl Cell {
         Cell {
             frames_alive: 0,
             should_update: true,
+            needs_redraw: false,
             state,
         }
     }
