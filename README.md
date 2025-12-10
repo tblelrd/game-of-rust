@@ -3,6 +3,8 @@
 Everyone knows this game, this is the rust implementation with
 multithreading.
 
+![DEMO](./conway_preview.gif)
+
 # Running 
 
 ```
